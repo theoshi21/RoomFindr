@@ -1,0 +1,372 @@
+// Authentication utilities and API functions
+import { supabase, getAdminClient } from './supabase'
+import type { 
+  RegistrationData, 
+  LoginCredentials, 
+  AuthResponse, 
+  PasswordResetData, 
+  PasswordChangeData,
+  EmailVerificationData,
+  UserWithProfile,
+  ValidationError
+} from '../types/auth'
+import type { UserInsert, UserProfileInsert } from '../types/database'
+
+// Validation utilities
+export const validateEmail = (email: string): ValidationError | null => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!email) {
+    return { field: 'email', message: 'Email is required' }
+  }
+  if (!emailRegex.test(email)) {
+    return { field: 'email', message: 'Please enter a valid email address' }
+  }
+  return null
+}
+
+export const validatePassword = (password: string): ValidationError | null => {
+  if (!password) {
+    return { field: 'password', message: 'Password is required' }
+  }
+  if (password.length < 8) {
+    return { field: 'password', message: 'Password must be at least 8 characters long' }
+  }
+  if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password)) {
+    return { field: 'password', message: 'Password must contain at least one uppercase letter, one lowercase letter, and one number' }
+  }
+  return null
+}
+
+export const validateName = (name: string, fieldName: string): ValidationError | null => {
+  if (!name || name.trim().length === 0) {
+    return { field: fieldName, message: `${fieldName.charAt(0).toUpperCase() + fieldName.slice(1)} is required` }
+  }
+  if (name.trim().length < 2) {
+    return { field: fieldName, message: `${fieldName.charAt(0).toUpperCase() + fieldName.slice(1)} must be at least 2 characters long` }
+  }
+  return null
+}
+
+export const validatePhone = (phone: string): ValidationError | null => {
+  if (!phone) return null // Phone is optional
+  
+  const phoneRegex = /^(\+63|0)[0-9]{10}$/
+  if (!phoneRegex.test(phone.replace(/\s/g, ''))) {
+    return { field: 'phone', message: 'Please enter a valid Philippine phone number' }
+  }
+  return null
+}
+
+export const validateRegistrationData = (data: RegistrationData): ValidationError[] => {
+  const errors: ValidationError[] = []
+  
+  const emailError = validateEmail(data.email)
+  if (emailError) errors.push(emailError)
+  
+  const passwordError = validatePassword(data.password)
+  if (passwordError) errors.push(passwordError)
+  
+  const firstNameError = validateName(data.firstName, 'firstName')
+  if (firstNameError) errors.push(firstNameError)
+  
+  const lastNameError = validateName(data.lastName, 'lastName')
+  if (lastNameError) errors.push(lastNameError)
+  
+  if (data.phone) {
+    const phoneError = validatePhone(data.phone)
+    if (phoneError) errors.push(phoneError)
+  }
+  
+  if (!data.role || !['tenant', 'landlord'].includes(data.role)) {
+    errors.push({ field: 'role', message: 'Please select a valid role' })
+  }
+  
+  return errors
+}
+
+// Authentication API functions
+export const signUp = async (data: RegistrationData): Promise<AuthResponse> => {
+  try {
+    // Validate input data
+    const validationErrors = validateRegistrationData(data)
+    if (validationErrors.length > 0) {
+      return {
+        user: null,
+        error: validationErrors.map(e => e.message).join(', ')
+      }
+    }
+
+    // Sign up with Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: data.email,
+      password: data.password,
+      options: {
+        data: {
+          role: data.role,
+          first_name: data.firstName,
+          last_name: data.lastName,
+        }
+      }
+    })
+
+    if (authError) {
+      return {
+        user: null,
+        error: authError.message
+      }
+    }
+
+    if (!authData.user) {
+      return {
+        user: null,
+        error: 'Failed to create user account'
+      }
+    }
+
+    // Create user record in our database using admin client
+    const adminClient = getAdminClient()
+    
+    const userInsert: UserInsert = {
+      id: authData.user.id,
+      email: data.email,
+      role: data.role,
+      is_active: true,
+      is_verified: false
+    }
+
+    const { error: userError } = await adminClient
+      .from('users')
+      .insert(userInsert)
+
+    if (userError) {
+      // If user creation fails, we should clean up the auth user
+      await adminClient.auth.admin.deleteUser(authData.user.id)
+      return {
+        user: null,
+        error: 'Failed to create user profile: ' + userError.message
+      }
+    }
+
+    // Create user profile
+    const profileInsert: UserProfileInsert = {
+      user_id: authData.user.id,
+      first_name: data.firstName,
+      last_name: data.lastName,
+      phone: data.phone || null
+    }
+
+    const { error: profileError } = await adminClient
+      .from('user_profiles')
+      .insert(profileInsert)
+
+    if (profileError) {
+      // Clean up user record if profile creation fails
+      await adminClient.from('users').delete().eq('id', authData.user.id)
+      await adminClient.auth.admin.deleteUser(authData.user.id)
+      return {
+        user: null,
+        error: 'Failed to create user profile: ' + profileError.message
+      }
+    }
+
+    // If landlord, create verification record
+    if (data.role === 'landlord') {
+      const { error: verificationError } = await adminClient
+        .from('landlord_verifications')
+        .insert({
+          landlord_id: authData.user.id,
+          status: 'pending'
+        })
+
+      if (verificationError) {
+        console.error('Failed to create verification record:', verificationError)
+        // Don't fail the registration for this, just log it
+      }
+    }
+
+    return {
+      user: authData.user,
+      error: null
+    }
+  } catch (error) {
+    return {
+      user: null,
+      error: error instanceof Error ? error.message : 'An unexpected error occurred'
+    }
+  }
+}
+
+export const signIn = async (credentials: LoginCredentials): Promise<AuthResponse> => {
+  try {
+    const emailError = validateEmail(credentials.email)
+    if (emailError) {
+      return {
+        user: null,
+        error: emailError.message
+      }
+    }
+
+    if (!credentials.password) {
+      return {
+        user: null,
+        error: 'Password is required'
+      }
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: credentials.email,
+      password: credentials.password
+    })
+
+    if (error) {
+      return {
+        user: null,
+        error: error.message
+      }
+    }
+
+    return {
+      user: data.user,
+      error: null
+    }
+  } catch (error) {
+    return {
+      user: null,
+      error: error instanceof Error ? error.message : 'An unexpected error occurred'
+    }
+  }
+}
+
+export const signOut = async (): Promise<void> => {
+  const { error } = await supabase.auth.signOut()
+  if (error) {
+    throw new Error(error.message)
+  }
+}
+
+export const resetPassword = async (data: PasswordResetData): Promise<{ error: string | null }> => {
+  try {
+    const emailError = validateEmail(data.email)
+    if (emailError) {
+      return { error: emailError.message }
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(data.email, {
+      redirectTo: `${window.location.origin}/auth/reset-password`
+    })
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    return { error: null }
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'An unexpected error occurred'
+    }
+  }
+}
+
+export const changePassword = async (data: PasswordChangeData): Promise<{ error: string | null }> => {
+  try {
+    const passwordError = validatePassword(data.newPassword)
+    if (passwordError) {
+      return { error: passwordError.message }
+    }
+
+    // Verify current password by attempting to sign in
+    const { data: user } = await supabase.auth.getUser()
+    if (!user.user?.email) {
+      return { error: 'User not authenticated' }
+    }
+
+    // Update password
+    const { error } = await supabase.auth.updateUser({
+      password: data.newPassword
+    })
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    return { error: null }
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'An unexpected error occurred'
+    }
+  }
+}
+
+export const verifyEmail = async (data: EmailVerificationData): Promise<{ error: string | null }> => {
+  try {
+    const { error } = await supabase.auth.verifyOtp({
+      token_hash: data.token,
+      type: data.type === 'signup' ? 'signup' : 'recovery'
+    })
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    // Update user verification status
+    const { data: user } = await supabase.auth.getUser()
+    if (user.user) {
+      const adminClient = getAdminClient()
+      await adminClient
+        .from('users')
+        .update({ is_verified: true })
+        .eq('id', user.user.id)
+    }
+
+    return { error: null }
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'An unexpected error occurred'
+    }
+  }
+}
+
+export const getCurrentUserWithProfile = async (): Promise<UserWithProfile | null> => {
+  try {
+    const { data: authUser } = await supabase.auth.getUser()
+    if (!authUser.user) return null
+
+    // Get user from our database
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', authUser.user.id)
+      .single()
+
+    if (userError || !user) return null
+
+    // Get user profile
+    const { data: profile } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('user_id', user.id)
+      .single()
+
+    return {
+      user,
+      profile: profile || undefined
+    }
+  } catch (error) {
+    console.error('Error getting current user:', error)
+    return null
+  }
+}
+
+// Role-based redirect utility
+export const getRoleBasedRedirect = (role: string): string => {
+  switch (role) {
+    case 'admin':
+      return '/admin/dashboard'
+    case 'landlord':
+      return '/landlord/dashboard'
+    case 'tenant':
+      return '/tenant/dashboard'
+    default:
+      return '/dashboard'
+  }
+}

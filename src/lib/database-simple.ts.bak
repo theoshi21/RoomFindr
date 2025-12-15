@@ -1,0 +1,303 @@
+// Simplified Database utility functions for RoomFindr
+// This version avoids complex TypeScript typing issues while maintaining functionality
+
+import { supabase, createAdminClient } from './supabase';
+
+// User Management Functions
+export const userService = {
+  // Get user by ID
+  async getUser(userId: string) {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Get user with profile
+  async getUserWithProfile(userId: string) {
+    const { data, error } = await supabase
+      .from('users')
+      .select(`
+        *,
+        user_profiles (*)
+      `)
+      .eq('id', userId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Update user profile
+  async updateProfile(userId: string, profileData: any) {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .update(profileData)
+      .eq('user_id', userId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Get dashboard stats for user
+  async getDashboardStats(userId: string) {
+    const { data, error } = await supabase
+      .rpc('get_user_dashboard_stats', { p_user_id: userId });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// Property Management Functions
+export const propertyService = {
+  // Search properties with filters
+  async searchProperties(filters: {
+    priceMin?: number;
+    priceMax?: number;
+    city?: string;
+    province?: string;
+    roomTypes?: string[];
+    amenities?: string[];
+    lat?: number;
+    lng?: number;
+    radiusKm?: number;
+    limit?: number;
+    offset?: number;
+  }) {
+    const { data, error } = await supabase
+      .rpc('search_properties', {
+        p_price_min: filters.priceMin || null,
+        p_price_max: filters.priceMax || null,
+        p_city: filters.city || null,
+        p_province: filters.province || null,
+        p_room_types: filters.roomTypes || null,
+        p_amenities: filters.amenities || null,
+        p_lat: filters.lat || null,
+        p_lng: filters.lng || null,
+        p_radius_km: filters.radiusKm || null,
+        p_limit: filters.limit || 50,
+        p_offset: filters.offset || 0
+      });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Get property by ID
+  async getProperty(propertyId: string) {
+    const { data, error } = await supabase
+      .from('properties')
+      .select(`
+        *,
+        users!properties_landlord_id_fkey (
+          id,
+          email,
+          user_profiles (
+            first_name,
+            last_name,
+            avatar
+          )
+        )
+      `)
+      .eq('id', propertyId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Get properties by landlord
+  async getPropertiesByLandlord(landlordId: string) {
+    const { data, error } = await supabase
+      .from('properties')
+      .select('*')
+      .eq('landlord_id', landlordId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// Reservation Management Functions
+export const reservationService = {
+  // Get reservation by ID
+  async getReservation(reservationId: string) {
+    const { data, error } = await supabase
+      .from('reservations')
+      .select(`
+        *,
+        properties (*),
+        users!reservations_tenant_id_fkey (
+          id,
+          email,
+          user_profiles (first_name, last_name)
+        ),
+        landlord:users!reservations_landlord_id_fkey (
+          id,
+          email,
+          user_profiles (first_name, last_name)
+        )
+      `)
+      .eq('id', reservationId)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Get reservations by user
+  async getReservationsByUser(userId: string, role: 'tenant' | 'landlord') {
+    const column = role === 'tenant' ? 'tenant_id' : 'landlord_id';
+    
+    const { data, error } = await supabase
+      .from('reservations')
+      .select(`
+        *,
+        properties (title, street, city, images),
+        users!reservations_tenant_id_fkey (
+          user_profiles (first_name, last_name)
+        )
+      `)
+      .eq(column, userId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// Notification Management Functions
+export const notificationService = {
+  // Get notifications for user
+  async getNotifications(userId: string, limit = 50) {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Create notification using database function
+  async createNotification(
+    userId: string,
+    type: string,
+    title: string,
+    message: string,
+    metadata?: Record<string, any>
+  ) {
+    const { data, error } = await supabase
+      .rpc('create_notification', {
+        p_user_id: userId,
+        p_type: type,
+        p_title: title,
+        p_message: message,
+        p_metadata: metadata || {}
+      });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// Review Management Functions
+export const reviewService = {
+  // Get reviews for property
+  async getPropertyReviews(propertyId: string) {
+    const { data, error } = await supabase
+      .from('reviews')
+      .select(`
+        *,
+        users!reviews_tenant_id_fkey (
+          user_profiles (first_name, last_name, avatar)
+        )
+      `)
+      .eq('property_id', propertyId)
+      .eq('is_verified', true)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Check if user can review property
+  async canUserReview(userId: string, propertyId: string) {
+    const { data, error } = await supabase
+      .rpc('can_user_review_property', {
+        p_user_id: userId,
+        p_property_id: propertyId
+      });
+    
+    if (error) throw error;
+    return data;
+  }
+};
+
+// Admin Functions
+export const adminService = {
+  // Get pending verifications
+  async getPendingVerifications() {
+    const { data, error } = await supabase
+      .from('landlord_verifications')
+      .select(`
+        *,
+        users!landlord_verifications_landlord_id_fkey (
+          email,
+          user_profiles (first_name, last_name)
+        ),
+        verification_documents (*)
+      `)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
+
+  // Get system statistics
+  async getSystemStats() {
+    const adminClient = createAdminClient();
+    
+    const [usersResult, propertiesResult, reservationsResult, transactionsResult] = await Promise.all([
+      adminClient.from('users').select('id', { count: 'exact', head: true }),
+      adminClient.from('properties').select('id', { count: 'exact', head: true }),
+      adminClient.from('reservations').select('id', { count: 'exact', head: true }),
+      adminClient.from('transactions').select('id', { count: 'exact', head: true })
+    ]);
+
+    return {
+      totalUsers: usersResult.count || 0,
+      totalProperties: propertiesResult.count || 0,
+      totalReservations: reservationsResult.count || 0,
+      totalTransactions: transactionsResult.count || 0
+    };
+  }
+};
+
+// Utility Functions
+export const dbUtils = {
+  // Test database connection
+  async testConnection() {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('id')
+        .limit(1);
+      
+      return { success: !error, error };
+    } catch (error) {
+      return { success: false, error };
+    }
+  }
+};

@@ -1,0 +1,195 @@
+import { supabase } from './supabase';
+import type {
+  User,
+  UserProfile,
+  UserRegistration,
+  LoginCredentials,
+  AuthResponse,
+} from '@/types';
+import type {
+  Property,
+  PropertyListing,
+  PropertyUpdate,
+  SearchFilters,
+} from '@/types/property';
+import type {
+  Reservation,
+  ReservationData,
+  CancellationResult,
+} from '@/types/reservation';
+
+// User Management APIs
+export const userAPI = {
+  async register(userData: UserRegistration): Promise<User> {
+    const { data, error } = await supabase.auth.signUp({
+      email: userData.email,
+      password: userData.password,
+      options: {
+        data: {
+          role: userData.role,
+          firstName: userData.profile.firstName,
+          lastName: userData.profile.lastName,
+          phone: userData.profile.phone,
+        },
+      },
+    });
+
+    if (error) throw error;
+    if (!data.user) throw new Error('Registration failed');
+
+    return data.user as unknown as User;
+  },
+
+  async login(credentials: LoginCredentials): Promise<AuthResponse> {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: credentials.email,
+      password: credentials.password,
+    });
+
+    if (error) throw error;
+
+    return {
+      user: data.user as unknown as User,
+      session: data.session,
+    };
+  },
+
+  async logout(): Promise<void> {
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+  },
+
+  async getCurrentUser(): Promise<User | null> {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    return user as unknown as User;
+  },
+
+  async updateProfile(
+    userId: string,
+    profileData: Partial<UserProfile>
+  ): Promise<User> {
+    const { data, error } = await supabase
+      .from('user_profiles')
+      .update(profileData)
+      .eq('user_id', userId)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as User;
+  },
+};
+
+// Property Management APIs
+export const propertyAPI = {
+  async createListing(listing: PropertyListing): Promise<Property> {
+    const { data, error } = await supabase
+      .from('properties')
+      .insert(listing)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as Property;
+  },
+
+  async updateListing(id: string, updates: PropertyUpdate): Promise<Property> {
+    const { data, error } = await supabase
+      .from('properties')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as Property;
+  },
+
+  async searchProperties(filters: SearchFilters): Promise<Property[]> {
+    let query = supabase.from('properties').select('*').eq('isActive', true);
+
+    if (filters.priceRange) {
+      query = query
+        .gte('price', filters.priceRange.min)
+        .lte('price', filters.priceRange.max);
+    }
+
+    if (filters.location?.city) {
+      query = query.ilike('address->city', `%${filters.location.city}%`);
+    }
+
+    if (filters.roomType && filters.roomType.length > 0) {
+      query = query.in('roomType', filters.roomType);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return data as Property[];
+  },
+
+  async getProperty(id: string): Promise<Property> {
+    const { data, error } = await supabase
+      .from('properties')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) throw error;
+    return data as Property;
+  },
+};
+
+// Reservation APIs
+export const reservationAPI = {
+  async createReservation(data: ReservationData): Promise<Reservation> {
+    const { data: reservation, error } = await supabase
+      .from('reservations')
+      .insert(data)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return reservation as Reservation;
+  },
+
+  async confirmReservation(id: string): Promise<Reservation> {
+    const { data, error } = await supabase
+      .from('reservations')
+      .update({ status: 'confirmed' })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data as Reservation;
+  },
+
+  async cancelReservation(id: string): Promise<CancellationResult> {
+    const { data, error } = await supabase
+      .from('reservations')
+      .update({ status: 'cancelled' })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    return {
+      success: true,
+      refundAmount: data.depositAmount,
+      message: 'Reservation cancelled successfully',
+    };
+  },
+
+  async getReservations(userId: string): Promise<Reservation[]> {
+    const { data, error } = await supabase
+      .from('reservations')
+      .select('*')
+      .or(`tenantId.eq.${userId},landlordId.eq.${userId}`);
+
+    if (error) throw error;
+    return data as Reservation[];
+  },
+};
