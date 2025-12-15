@@ -10,7 +10,7 @@ export interface AppError extends Error {
 }
 
 export function useErrorHandler() {
-  const { error: showError } = useToast();
+  const { addToast } = useToast();
 
   const handleError = useCallback((error: unknown, context?: string) => {
     console.error('Error occurred:', error, context ? `Context: ${context}` : '');
@@ -50,8 +50,8 @@ export function useErrorHandler() {
       message = error;
     }
 
-    showError(message, { title });
-  }, [showError]);
+    addToast(message, 'error');
+  }, [addToast]);
 
   const handleAsyncError = useCallback(async <T>(
     asyncFn: () => Promise<T>,

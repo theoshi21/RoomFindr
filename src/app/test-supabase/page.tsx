@@ -22,13 +22,14 @@ export default function TestSupabasePage() {
       addResult('Test 1: Basic connection test')
       const startTime = Date.now()
       
-      const timeoutPromise = new Promise((_, reject) => {
+      const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('Connection timeout after 10 seconds')), 10000)
       })
       
       const connectionPromise = supabase.from('users').select('count').limit(1)
       
-      const { data, error } = await Promise.race([connectionPromise, timeoutPromise])
+      const result = await Promise.race([connectionPromise, timeoutPromise])
+      const { data, error } = result
       const duration = Date.now() - startTime
       
       if (error) {
@@ -59,13 +60,14 @@ export default function TestSupabasePage() {
       addResult('Test 2: Auth endpoint test')
       const authStartTime = Date.now()
       
-      const authTimeoutPromise = new Promise((_, reject) => {
+      const authTimeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('Auth timeout after 5 seconds')), 5000)
       })
       
       const authPromise = supabase.auth.getSession()
       
-      const { data: authData, error: authError } = await Promise.race([authPromise, authTimeoutPromise])
+      const authResult = await Promise.race([authPromise, authTimeoutPromise])
+      const { data: authData, error: authError } = authResult
       const authDuration = Date.now() - authStartTime
       
       if (authError) {

@@ -14,7 +14,7 @@ export function ErrorHandlingExample() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const { success, error: showErrorToast } = useToast();
+  const { addToast } = useToast();
   const { handleAsyncError } = useErrorHandler();
 
   const { values, errors, getFieldProps, validateAll } = useFormValidation(
@@ -47,7 +47,7 @@ export function ErrorHandlingExample() {
     }, 'success-simulation');
 
     if (result) {
-      success('Operation completed successfully!');
+      addToast('Operation completed successfully!', 'success');
     }
 
     setLoading(false);
@@ -57,10 +57,10 @@ export function ErrorHandlingExample() {
     e.preventDefault();
     
     if (validateAll()) {
-      success('Form submitted successfully!');
+      addToast('Form submitted successfully!', 'success');
       setShowModal(false);
     } else {
-      showErrorToast('Please fix the form errors');
+      addToast('Please fix the form errors', 'error');
     }
   };
 
