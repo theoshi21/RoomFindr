@@ -1,11 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAdminClient } from '../../../../lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 
 export async function POST(request: NextRequest) {
   try {
     // TODO: Add authentication check here to ensure user is admin
     const adminData = await request.json()
-    const adminClient = getAdminClient() as any
+    
+    // Create admin client only when needed to avoid build-time environment variable issues
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    
+    if (!supabaseUrl || !serviceRoleKey) {
+      return NextResponse.json(
+        { error: 'Server configuration error' },
+        { status: 500 }
+      )
+    }
+    
+    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
 
     // Create auth user
     const { data: authData, error: authError } = await adminClient.auth.admin.createUser({

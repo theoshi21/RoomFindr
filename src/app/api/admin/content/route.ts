@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getAdminClient } from '../../../../lib/supabase'
+import { createClient } from '@supabase/supabase-js'
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,7 +12,19 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20')
     
     const offset = (page - 1) * limit
-    const adminClient = getAdminClient() as any
+    
+    // Create admin client only when needed to avoid build-time environment variable issues
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    
+    if (!supabaseUrl || !serviceRoleKey) {
+      console.warn('Supabase environment variables not available, using mock data')
+    }
+    
+    const adminClient = supabaseUrl && serviceRoleKey ? 
+      createClient(supabaseUrl, serviceRoleKey, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      }) : null
 
     // Mock implementation - replace with actual database queries
     const mockContent = [
@@ -78,7 +90,15 @@ export async function PATCH(request: NextRequest) {
   try {
     // TODO: Add authentication check here to ensure user is admin
     const { contentId, action, note } = await request.json()
-    const adminClient = getAdminClient() as any
+    
+    // Create admin client only when needed
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    
+    const adminClient = supabaseUrl && serviceRoleKey ? 
+      createClient(supabaseUrl, serviceRoleKey, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      }) : null
 
     // Mock implementation - replace with actual database updates
     console.log(`Performing ${action} on content ${contentId} with note: ${note}`)
