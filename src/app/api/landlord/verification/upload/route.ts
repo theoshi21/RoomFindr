@@ -45,8 +45,8 @@ export async function POST(request: NextRequest) {
     // Generate unique filename
     const timestamp = Date.now()
     const fileExtension = file.name.split('.').pop()
-    const fileName = \`\${documentType}_\${timestamp}.\${fileExtension}\`
-    const filePath = \`\${landlordId}/\${fileName}\`
+    const fileName = `${documentType}_${timestamp}.${fileExtension}`
+    const filePath = `${landlordId}/${fileName}`
     
     console.log('Uploading file to path:', filePath)
     
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     if (uploadError) {
       console.error('Storage upload error:', uploadError)
       return NextResponse.json(
-        { success: false, error: \`Upload failed: \${uploadError.message}\` },
+        { success: false, error: `Upload failed: ${uploadError.message}` },
         { status: 500 }
       )
     }

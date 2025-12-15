@@ -16,14 +16,14 @@
 -- Insert the admin user into public.users
 -- Replace 'YOUR-ADMIN-UUID-HERE' with the actual UUID from Supabase Dashboard
 INSERT INTO public.users (id, email, role, is_active, is_verified) VALUES
-    ('YOUR-ADMIN-UUID-HERE', 'admin@roomfindr.com', 'admin', true, true)
+    ('d5fd8882-c6b2-4618-a20b-e50bab31ec09', 'admin@roomfindr.com', 'admin', true, true)
 ON CONFLICT (id) DO UPDATE SET
     role = 'admin',
     is_verified = true;
 
 -- Create admin profile
 INSERT INTO public.user_profiles (user_id, first_name, last_name, phone) VALUES
-    ('YOUR-ADMIN-UUID-HERE', 'System', 'Administrator', '+63-900-000-0001')
+    ('d5fd8882-c6b2-4618-a20b-e50bab31ec09', 'System', 'Administrator', '+63-900-000-0001')
 ON CONFLICT (user_id) DO UPDATE SET
     first_name = 'System',
     last_name = 'Administrator';
@@ -39,7 +39,7 @@ INSERT INTO public.properties (
 ) VALUES
     (
         gen_random_uuid(),
-        'YOUR-ADMIN-UUID-HERE', -- Temporarily assign to admin, change later
+        'd5fd8882-c6b2-4618-a20b-e50bab31ec09', -- Temporarily assign to admin, change later
         'Cozy Studio Apartment in Makati',
         'A modern studio apartment perfect for young professionals. Located in the heart of Makati CBD with easy access to public transportation.',
         '123 Ayala Avenue',
@@ -59,7 +59,7 @@ INSERT INTO public.properties (
     ),
     (
         gen_random_uuid(),
-        'YOUR-ADMIN-UUID-HERE', -- Temporarily assign to admin, change later
+        'd5fd8882-c6b2-4618-a20b-e50bab31ec09', -- Temporarily assign to admin, change later
         'Shared Room in BGC',
         'Spacious shared room in a modern condominium in Bonifacio Global City. Perfect for students and young professionals.',
         '456 32nd Street',
@@ -79,7 +79,7 @@ INSERT INTO public.properties (
     ),
     (
         gen_random_uuid(),
-        'YOUR-ADMIN-UUID-HERE', -- Temporarily assign to admin, change later
+        'd5fd8882-c6b2-4618-a20b-e50bab31ec09', -- Temporarily assign to admin, change later
         'Single Room near UP Diliman',
         'Affordable single room perfect for students. Walking distance to UP Diliman campus.',
         '789 Katipunan Avenue',
@@ -102,7 +102,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Create a sample notification for the admin
 INSERT INTO public.notifications (user_id, notification_type, title, message, metadata) VALUES
     (
-        'YOUR-ADMIN-UUID-HERE',
+        'd5fd8882-c6b2-4618-a20b-e50bab31ec09',
         'announcement',
         'Welcome to RoomFindr Admin',
         'Your admin account has been set up successfully. You can now manage the platform.',

@@ -95,8 +95,8 @@ export const signUp = async (data: RegistrationData): Promise<AuthResponse> => {
       }
     }
 
-    // Sign up with Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    // Add timeout and better error handling for Supabase calls
+    const authPromise = supabase.auth.signUp({
       email: data.email,
       password: data.password,
       options: {
@@ -108,14 +108,37 @@ export const signUp = async (data: RegistrationData): Promise<AuthResponse> => {
       }
     })
 
-    if (authError) {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Registration timeout')), 5000)
+    })
+
+    const result = await Promise.race([authPromise, timeoutPromise])
+
+    // Handle undefined or malformed responses
+    if (!result || typeof result !== 'object') {
       return {
         user: null,
-        error: authError.message
+        error: 'Invalid registration response'
       }
     }
 
-    if (!authData.user) {
+    const { data: authData, error: authError } = result
+
+    if (authError) {
+      // Map Supabase error messages to user-friendly messages
+      let errorMessage = authError.message
+      if (errorMessage.includes('User already registered')) {
+        errorMessage = 'An account with this email already exists'
+      } else if (errorMessage.includes('Password should be at least')) {
+        errorMessage = 'Password must be at least 6 characters long'
+      }
+      return {
+        user: null,
+        error: errorMessage
+      }
+    }
+
+    if (!authData || !authData.user) {
       return {
         user: null,
         error: 'Failed to create user account'
@@ -130,9 +153,22 @@ export const signUp = async (data: RegistrationData): Promise<AuthResponse> => {
       error: null
     }
   } catch (error) {
+    // Handle network errors, timeout errors, and other exceptions
+    let errorMessage = 'Registration failed'
+    
+    if (error instanceof Error) {
+      if (error.message.includes('timeout') || error.message.includes('fetch')) {
+        errorMessage = 'Registration service unavailable'
+      } else if (error.message.includes('Cannot read properties of undefined')) {
+        errorMessage = 'Registration failed - please try again'
+      } else {
+        errorMessage = error.message
+      }
+    }
+
     return {
       user: null,
-      error: error instanceof Error ? error.message : 'An unexpected error occurred'
+      error: errorMessage
     }
   }
 }
@@ -154,15 +190,46 @@ export const signIn = async (credentials: LoginCredentials): Promise<AuthRespons
       }
     }
 
-    const { data, error } = await supabase.auth.signInWithPassword({
+    // Add timeout and better error handling for Supabase calls
+    const authPromise = supabase.auth.signInWithPassword({
       email: credentials.email,
       password: credentials.password
     })
 
-    if (error) {
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('Authentication timeout')), 5000)
+    })
+
+    const result = await Promise.race([authPromise, timeoutPromise])
+
+    // Handle undefined or malformed responses
+    if (!result || typeof result !== 'object') {
       return {
         user: null,
-        error: error.message
+        error: 'Invalid authentication response'
+      }
+    }
+
+    const { data, error } = result
+
+    if (error) {
+      // Map Supabase error messages to user-friendly messages
+      let errorMessage = error.message
+      if (errorMessage.includes('Invalid login credentials') || 
+          errorMessage.includes('Email not confirmed') ||
+          errorMessage.includes('Invalid email or password')) {
+        errorMessage = 'Invalid email or password'
+      }
+      return {
+        user: null,
+        error: errorMessage
+      }
+    }
+
+    if (!data || !data.user) {
+      return {
+        user: null,
+        error: 'Authentication failed - no user data received'
       }
     }
 
@@ -171,9 +238,22 @@ export const signIn = async (credentials: LoginCredentials): Promise<AuthRespons
       error: null
     }
   } catch (error) {
+    // Handle network errors, timeout errors, and other exceptions
+    let errorMessage = 'Authentication failed'
+    
+    if (error instanceof Error) {
+      if (error.message.includes('timeout') || error.message.includes('fetch')) {
+        errorMessage = 'Authentication service unavailable'
+      } else if (error.message.includes('Cannot read properties of undefined')) {
+        errorMessage = 'Invalid credentials'
+      } else {
+        errorMessage = error.message
+      }
+    }
+
     return {
       user: null,
-      error: error instanceof Error ? error.message : 'An unexpected error occurred'
+      error: errorMessage
     }
   }
 }

@@ -242,7 +242,9 @@ class TestRunner {
 }
 
 // CLI execution
-if (require.main === module) {
+const isMainModule = import.meta.url === `file://${process.argv[1]}`
+
+if (isMainModule) {
   const runner = new TestRunner()
   
   async function main() {

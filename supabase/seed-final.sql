@@ -12,7 +12,7 @@
 -- Update the admin user role (replace the UUID with the real one)
 UPDATE public.users 
 SET role = 'admin', is_verified = true 
-WHERE id = 'REPLACE-WITH-ADMIN-UUID';
+WHERE id = 'd5fd8882-c6b2-4618-a20b-e50bab31ec09';
 
 -- Create sample properties with the admin as temporary landlord
 INSERT INTO public.properties (
